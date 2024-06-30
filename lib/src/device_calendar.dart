@@ -271,13 +271,14 @@ class DeviceCalendarPlugin {
   /// - [iOS] Not used. A local account will be picked up automatically, if not found, an error will be thrown.
   ///
   /// Returns a [Result] with the newly created [Calendar.id]
-  Future<Result<String>> createCalendar(
-    String? calendarName, {
+  Future<Result<String>> createOrUpdateCalendar({
+    String? calendarId,
+    String? calendarName,
     Color? calendarColor,
     String? localAccountName,
   }) async {
     return _invokeChannelMethod(
-      ChannelConstants.methodNameCreateCalendar,
+      ChannelConstants.methodNameCreateOrUpdateCalendar,
       assertParameters: (result) {
         calendarColor ??= Colors.red;
 
@@ -285,11 +286,12 @@ class DeviceCalendarPlugin {
           result,
           calendarName?.isNotEmpty == true,
           ErrorCodes.invalidArguments,
-          ErrorMessages.createCalendarInvalidCalendarNameMessage,
+          ErrorMessages.createOrUpdateCalendarInvalidCalendarNameMessage,
         );
       },
       arguments: () => <String, Object?>{
         ChannelConstants.parameterNameCalendarName: calendarName,
+        ChannelConstants.parameterNameCalendarId: calendarId,
         ChannelConstants.parameterNameCalendarColor:
             '0x${calendarColor?.value.toRadixString(16)}',
         ChannelConstants.parameterNameLocalAccountName:

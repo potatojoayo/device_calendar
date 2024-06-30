@@ -12,7 +12,7 @@ class ErrorMessages {
       "To create or update an all day event you must provide calendar ID, event with a title and event's start date";
   static const String createOrUpdateEventInvalidArgumentsMessage =
       "To create or update an event you must provide calendar ID, event with a title and event's start date and end date (where start date must be before end date)";
-  static const String createCalendarInvalidCalendarNameMessage =
+  static const String createOrUpdateCalendarInvalidCalendarNameMessage =
       'Calendar name must not be null or empty';
 
   static const String invalidRecurrencyFrequency =
