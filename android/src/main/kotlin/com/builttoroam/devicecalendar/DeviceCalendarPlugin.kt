@@ -2,6 +2,10 @@ package com.builttoroam.devicecalendar
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import androidx.annotation.NonNull
 import com.builttoroam.devicecalendar.common.Constants
 import com.builttoroam.devicecalendar.common.DayOfWeek
@@ -13,9 +17,11 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
-import io.flutter.plugin.common.MethodChannel.Result
+import io.flutter.plugin.common.EventChannel
+
 
 const val CHANNEL_NAME = "plugins.builttoroam.com/device_calendar"
+const val EVENT_CHANNEL_NAME = "plugins.builttoroam.com/device_calendar/calenadr"
 
 class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
@@ -24,6 +30,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
     /// This local reference serves to register the plugin with the Flutter Engine and unregister it
     /// when the Flutter Engine is detached from the Activity
     private lateinit var channel: MethodChannel
+    private lateinit var eventChannel: EventChannel
     private var context: Context? = null
     private var activity: Activity? = null
 
@@ -35,7 +42,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
     private val DELETE_EVENT_METHOD = "deleteEvent"
     private val DELETE_EVENT_INSTANCE_METHOD = "deleteEventInstance"
     private val CREATE_OR_UPDATE_EVENT_METHOD = "createOrUpdateEvent"
-    private val CREATE_CALENDAR_METHOD = "createCalendar"
+    private val CREATE_OR_UPDATE_CALENDAR_METHOD = "createOrUpdateCalendar"
     private val DELETE_CALENDAR_METHOD = "deleteCalendar"
 
     // Method arguments
@@ -77,14 +84,35 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     private lateinit var _calendarDelegate: CalendarDelegate
 
+
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, CHANNEL_NAME)
+        eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, EVENT_CHANNEL_NAME); // timeHandlerEvent event name
+        eventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            private var calendarChangeObserver: CalendarChangeObserver? = null
+
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                events?.let {
+                    val context = flutterPluginBinding.applicationContext
+                    calendarChangeObserver = CalendarChangeObserver(context, events)
+                    calendarChangeObserver?.fetchAndSendCalendarData()
+                }
+            }
+
+            override fun onCancel(arguments: Any?) {
+                calendarChangeObserver?.let {
+                    flutterPluginBinding.applicationContext.contentResolver.unregisterContentObserver(it)
+                }
+                calendarChangeObserver = null
+            }
+        })
         channel.setMethodCallHandler(this)
         _calendarDelegate = CalendarDelegate(null, context!!)
     }
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+        eventChannel.setStreamHandler(null)
         channel.setMethodCallHandler(null)
     }
 
@@ -108,17 +136,20 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
         activity = null
     }
 
-    override fun onMethodCall(call: MethodCall, result: Result) {
+    override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             REQUEST_PERMISSIONS_METHOD -> {
                 _calendarDelegate.requestPermissions(result)
             }
+
             HAS_PERMISSIONS_METHOD -> {
                 _calendarDelegate.hasPermissions(result)
             }
+
             RETRIEVE_CALENDARS_METHOD -> {
                 _calendarDelegate.retrieveCalendars(result)
             }
+
             RETRIEVE_EVENTS_METHOD -> {
                 val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
                 val startDate = call.argument<Long>(START_DATE_ARGUMENT)
@@ -127,18 +158,21 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
                 _calendarDelegate.retrieveEvents(calendarId!!, startDate, endDate, eventIds, result)
             }
+
             CREATE_OR_UPDATE_EVENT_METHOD -> {
                 val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
                 val event = parseEventArgs(call, calendarId)
 
                 _calendarDelegate.createOrUpdateEvent(calendarId!!, event, result)
             }
+
             DELETE_EVENT_METHOD -> {
                 val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
                 val eventId = call.argument<String>(EVENT_ID_ARGUMENT)
 
                 _calendarDelegate.deleteEvent(calendarId!!, eventId!!, result)
             }
+
             DELETE_EVENT_INSTANCE_METHOD -> {
                 val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
                 val eventId = call.argument<String>(EVENT_ID_ARGUMENT)
@@ -148,17 +182,21 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
                 _calendarDelegate.deleteEvent(calendarId!!, eventId!!, result, startDate, endDate, followingInstances)
             }
-            CREATE_CALENDAR_METHOD -> {
+
+            CREATE_OR_UPDATE_CALENDAR_METHOD -> {
+
+                val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
                 val calendarName = call.argument<String>(CALENDAR_NAME_ARGUMENT)
                 val calendarColor = call.argument<String>(CALENDAR_COLOR_ARGUMENT)
                 val localAccountName = call.argument<String>(LOCAL_ACCOUNT_NAME_ARGUMENT)
-
-                _calendarDelegate.createCalendar(calendarName!!, calendarColor, localAccountName!!, result)
+                _calendarDelegate.createOrUpdateCalendar(calendarId, calendarName!!, calendarColor, localAccountName!!, result)
             }
+
             DELETE_CALENDAR_METHOD -> {
                 val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
-                _calendarDelegate.deleteCalendar(calendarId!!,result)
+                _calendarDelegate.deleteCalendar(calendarId!!, result)
             }
+
             else -> {
                 result.notImplemented()
             }
@@ -261,9 +299,9 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
             }
 
     private fun parseEventStatus(value: String?): EventStatus? =
-        if (value == null || value == Constants.EVENT_STATUS_NONE) {
-            null
-        } else {
-            EventStatus.valueOf(value)
-        }
+            if (value == null || value == Constants.EVENT_STATUS_NONE) {
+                null
+            } else {
+                EventStatus.valueOf(value)
+            }
 }

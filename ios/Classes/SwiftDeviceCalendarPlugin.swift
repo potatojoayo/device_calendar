@@ -64,7 +64,8 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin, EKEventViewDele
     }
 
     struct Reminder: Codable {
-        let minutes: Int
+        let minutes: Int?
+        let date: String?
     }
 
     enum Availability: String, Codable {
@@ -82,6 +83,7 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin, EKEventViewDele
     }
 
     static let channelName = "plugins.builttoroam.com/device_calendar"
+    static let calendarEventChannelName = "plugins.builttoroam.com/device_calendar/calenadr"
     let notFoundErrorCode = "404"
     let notAllowed = "405"
     let genericError = "500"
@@ -142,7 +144,93 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin, EKEventViewDele
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: channelName, binaryMessenger: registrar.messenger())
         let instance = SwiftDeviceCalendarPlugin()
+        let calendarEventChannel = FlutterEventChannel(name: calendarEventChannelName, binaryMessenger: registrar.messenger())
+        calendarEventChannel.setStreamHandler(CalendarStreamHandler(eventStore: EKEventStore()))
         registrar.addMethodCallDelegate(instance, channel: channel)
+    }
+
+    class CalendarStreamHandler: NSObject, FlutterStreamHandler {
+        // Declare our eventSink, it will be initialized later
+
+        private var eventStore: EKEventStore
+        private var eventSink: FlutterEventSink?
+
+        init(eventStore: EKEventStore) {
+            self.eventStore = eventStore
+        }
+
+        private func getAndSinkCalendars() {
+            let ekCalendars = eventStore.calendars(for: .event)
+            let defaultCalendar = eventStore.defaultCalendarForNewEvents
+            var calendars = [Calendar]()
+            for ekCalendar in ekCalendars {
+                let calendar = Calendar(
+                    id: ekCalendar.calendarIdentifier,
+                    name: ekCalendar.title,
+                    isReadOnly: !ekCalendar.allowsContentModifications,
+                    isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
+                    color: UIColor(cgColor: ekCalendar.cgColor).rgb()!,
+                    accountName: ekCalendar.source.title,
+                    accountType: getAccountType(ekCalendar.source.sourceType))
+                calendars.append(calendar)
+            }
+            do {
+                let jsonEncoder = JSONEncoder()
+                let jsonData = try jsonEncoder.encode(calendars)
+                let jsonString = String(data: jsonData, encoding: .utf8)
+                if eventSink != nil {
+                    eventSink!(jsonString)
+                }
+            } catch {
+                print(error)
+            }
+        }
+
+        @objc func onCalendarChange(_ notification: NSNotification) {
+            getAndSinkCalendars()
+        }
+
+        private func getAccountType(_ sourceType: EKSourceType) -> String {
+            switch sourceType {
+            case .local:
+                return "Local"
+            case .exchange:
+                return "Exchange"
+            case .calDAV:
+                return "CalDAV"
+            case .mobileMe:
+                return "MobileMe"
+            case .subscribed:
+                return "Subscribed"
+            case .birthdays:
+                return "Birthdays"
+            default:
+                return "Unknown"
+            }
+        }
+
+        func onListen(withArguments arguments: Any?, eventSink: @escaping FlutterEventSink) -> FlutterError? {
+            self.eventSink = eventSink
+
+            NotificationCenter.default.addObserver(self, selector: #selector(onCalendarChange(_:)), name: NSNotification.Name.EKEventStoreChanged, object: nil)
+
+            getAndSinkCalendars()
+
+            // TODO:
+//            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
+//                let dateFormat = DateFormatter()
+//                dateFormat.dateFormat = "HH:mm:ss"
+//                let time = dateFormat.string(from: Date())
+//                eventSink(time)
+//            })
+
+            return nil
+        }
+
+        func onCancel(withArguments arguments: Any?) -> FlutterError? {
+            eventSink = nil
+            return nil
+        }
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -223,12 +311,14 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin, EKEventViewDele
                 calendar.cgColor = UIColor(red: 255, green: 0, blue: 0, alpha: 0).cgColor // Red colour as a default
             }
 
-            guard let source = getSource() else {
-                result(FlutterError(code: genericError, message: "Local calendar was not found.", details: nil))
-                return
-            }
+            if id == nil {
+                guard let source = getSource() else {
+                    result(FlutterError(code: genericError, message: "Local calendar was not found.", details: nil))
+                    return
+                }
 
-            calendar.source = source
+                calendar.source = source
+            }
 
             try eventStore.saveCalendar(calendar, commit: true)
             result(calendar.calendarIdentifier)
@@ -374,7 +464,7 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin, EKEventViewDele
         var reminders = [Reminder]()
         if ekEvent.alarms != nil {
             for alarm in ekEvent.alarms! {
-                reminders.append(Reminder(minutes: Int(-alarm.relativeOffset / 60)))
+                reminders.append(Reminder(minutes: Int(-alarm.relativeOffset / 60), date: alarm.absoluteDate != nil ? alarm.absoluteDate!.ISO8601Format() : nil))
             }
         }
 
@@ -642,9 +732,14 @@ public class SwiftDeviceCalendarPlugin: NSObject, FlutterPlugin, EKEventViewDele
         }
 
         var reminders = [EKAlarm]()
+
         for reminderArguments in remindersArguments! {
-            let minutes = reminderArguments[minutesArgument] as! Int
-            reminders.append(EKAlarm(relativeOffset: 60 * Double(-minutes)))
+            print(reminderArguments)
+            if let minutes = reminderArguments[minutesArgument] as? Int {
+                reminders.append(EKAlarm(relativeOffset: 60 * Double(-minutes)))
+            } else {
+                print("No valid reminder argument found.")
+            }
         }
 
         return reminders

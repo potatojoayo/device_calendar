@@ -1,5 +1,7 @@
 class ChannelConstants {
   static const String channelName = 'plugins.builttoroam.com/device_calendar';
+  static const String calendarEventChannelName =
+      'plugins.builttoroam.com/device_calendar/calenadr';
 
   static const String methodNameRequestPermissions = 'requestPermissions';
   static const String methodNameHasPermissions = 'hasPermissions';

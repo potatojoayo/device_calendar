@@ -21,6 +21,9 @@ class DeviceCalendarPlugin {
   static const MethodChannel channel =
       MethodChannel(ChannelConstants.channelName);
 
+  static const EventChannel eventChannel =
+      EventChannel(ChannelConstants.calendarEventChannelName);
+
   static final DeviceCalendarPlugin _instance = DeviceCalendarPlugin.private();
 
   factory DeviceCalendarPlugin({bool shouldInitTimezone = true}) {
@@ -65,6 +68,19 @@ class DeviceCalendarPlugin {
             ),
       ),
     );
+  }
+
+  Stream<UnmodifiableListView<Calendar>> calendarStream() {
+    return eventChannel.receiveBroadcastStream().map((rawData) {
+      return UnmodifiableListView(
+        json.decode(rawData).map<Calendar>(
+          (decodedCalendar) {
+            final calendar = Calendar.fromJson(decodedCalendar);
+            return calendar;
+          },
+        ),
+      );
+    });
   }
 
   /// Retrieves the events from the specified calendar
@@ -274,14 +290,12 @@ class DeviceCalendarPlugin {
   Future<Result<String>> createOrUpdateCalendar({
     String? calendarId,
     String? calendarName,
-    Color? calendarColor,
+    int? calendarColor,
     String? localAccountName,
   }) async {
     return _invokeChannelMethod(
       ChannelConstants.methodNameCreateOrUpdateCalendar,
       assertParameters: (result) {
-        calendarColor ??= Colors.red;
-
         _assertParameter(
           result,
           calendarName?.isNotEmpty == true,
@@ -293,7 +307,7 @@ class DeviceCalendarPlugin {
         ChannelConstants.parameterNameCalendarName: calendarName,
         ChannelConstants.parameterNameCalendarId: calendarId,
         ChannelConstants.parameterNameCalendarColor:
-            '0x${calendarColor?.value.toRadixString(16)}',
+            '0x${calendarColor?.toRadixString(16)}',
         ChannelConstants.parameterNameLocalAccountName:
             localAccountName?.isEmpty ?? true
                 ? 'Device Calendar'

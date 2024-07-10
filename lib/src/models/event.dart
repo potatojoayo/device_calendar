@@ -274,4 +274,36 @@ class Event {
       return false;
     }
   }
+
+  Event copyWith(
+      {String? eventId,
+      String? title,
+      TZDateTime? start,
+      TZDateTime? end,
+      String? calendarId,
+      String? description,
+      List<Attendee>? attendees,
+      RecurrenceRule? recurrenceRule,
+      List<Reminder>? reminders,
+      Availability? availability,
+      String? location,
+      Uri? url,
+      bool? allDay,
+      EventStatus? status,
+      bool setEventIdNull = false}) {
+    return Event(calendarId ?? this.calendarId,
+        eventId: setEventIdNull ? null : eventId ?? this.eventId,
+        title: title ?? this.title,
+        start: start ?? this.start,
+        end: end ?? this.end,
+        description: description ?? this.description,
+        attendees: attendees ?? this.attendees,
+        recurrenceRule: recurrenceRule ?? this.recurrenceRule,
+        reminders: reminders ?? this.reminders,
+        availability: availability ?? this.availability,
+        location: location ?? this.location,
+        url: url ?? this.url,
+        allDay: allDay ?? this.allDay,
+        status: status ?? this.status);
+  }
 }

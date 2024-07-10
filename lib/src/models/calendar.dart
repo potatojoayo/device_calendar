@@ -53,4 +53,22 @@ class Calendar {
 
     return data;
   }
+
+  Calendar copyWith(
+      {String? id,
+      String? name,
+      bool? isReadOnly,
+      bool? isDefault,
+      int? color,
+      String? accountName,
+      String? accountType}) {
+    return Calendar(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        isReadOnly: isReadOnly ?? this.isReadOnly,
+        isDefault: isDefault ?? this.isDefault,
+        color: color ?? this.color,
+        accountName: accountName ?? this.accountName,
+        accountType: accountType ?? this.accountType);
+  }
 }
